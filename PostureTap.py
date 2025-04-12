@@ -1,29 +1,40 @@
-#This Script create the Aplication User Interface to work together with import functions from the PoseEstimation.py
 import sys
 import cv2
-import subprocess
-import platform
 from pygrabber.dshow_graph import FilterGraph
 from PyQt6.QtWidgets import (QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, 
                              QComboBox, QHBoxLayout, QMenu, QSystemTrayIcon, QCheckBox)
 from PyQt6.QtGui import QImage, QPixmap, QFont, QFontDatabase, QIcon
 from PyQt6.QtCore import QTimer, Qt, QEvent
 import PyQt6.QtCore as QtCore
-from PoseEstimation import get_posture_frame, release_camera, set_notifications_enabled  
+from PoseEstimation import  get_posture_frame, release_camera, set_notifications_enabled, load_best_distance
+from CalibrationWindow import Calibration_Window
 
-class PosturePalApp(QWidget):
+Calibrated = False
+
+POSTURE_FILE = "user_posture.json"
+best_distance = None
+
+class PostureTapApp(QWidget):
     def __init__(self):
         super().__init__()
+        self.app = QApplication([])
         self.init_ui()
         self.init_tray()
+        self.calibration_window = Calibration_Window()
+        self.calibration_window.calibration_done.connect(self.calibration_complete)
+
+    def closeEvent(self, event):
+        release_camera()
+        self.timer.stop()
+
 
     def init_ui(self):
         """Initialize the main UI."""
         font_path = r"User Interface/Fredoka-VariableFont_wdth,wght.ttf"
         font_id = QFontDatabase.addApplicationFont(font_path)
-        if font_id != -1:
-            font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
-            app.setFont(QFont(font_family, 14))
+        font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
+        app.setFont(QFont(font_family, 14))
+        self.show()
 
         self.setWindowTitle("Correct Your Posture!")
         self.setGeometry(200, 200, 550, 450)
@@ -39,7 +50,7 @@ class PosturePalApp(QWidget):
 
         # Title Layout (Text + Image)
         title_layout = QHBoxLayout()
-        self.title_label = QLabel("PosturePal", self)
+        self.title_label = QLabel("PostureTap", self)
         self.title_label.setFont(QFont(font_family))
         self.title_label.setStyleSheet("font-size: 33px; font-weight: bold; color: white;")
 
@@ -66,7 +77,7 @@ class PosturePalApp(QWidget):
         # Start & Stop Buttons
         self.start_button = QPushButton("Start")
         self.stop_button = QPushButton("Stop")
-        
+
         button_style = """
             QPushButton {
                 background-color: #0078A0;
@@ -77,14 +88,14 @@ class PosturePalApp(QWidget):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #005f7f; /* Darker blue on hover */
-                border: 2px solid white; /* White border on hover */
+                background-color: #005f7f;
+                border: 2px solid white;
             }
             QPushButton:pressed {
-                background-color: #004c66; /* Even darker blue when clicked */
+                background-color: #004c66;
             }
             QPushButton:focus {
-                border: 2px solid yellow; /* Yellow border when focused */
+                border: 2px solid yellow;
             }
         """
 
@@ -98,14 +109,14 @@ class PosturePalApp(QWidget):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #a82828; /* Darker red on hover */
+                background-color: #a82828;
                 border: 2px solid white;
             }
             QPushButton:pressed {
-                background-color: #8b1e1e; /* Even darker red when clicked */
+                background-color: #8b1e1e;
             }
             QPushButton:focus {
-                border: 2px solid yellow; /* Yellow border when focused */
+                border: 2px solid yellow;
             }
         """
 
@@ -126,11 +137,79 @@ class PosturePalApp(QWidget):
         self.notification_checkbox.stateChanged.connect(self.toggle_notifications)
 
         # Camera Feed Label
-        self.camera_label = QLabel("Camera Device", self)
+        self.camera_label = QLabel("How to use:\n" \
+        "\n1. Sit comfy with back straighten, then hit Calibrate.\n" \
+        "\n2. Tap Start after the calibration is done.\n" \
+        "\n3. Minimize the app — it'll hang out in the tray.\n" \
+        "\n4. It'll gently remind you if you start slouching.", self)
         self.camera_label.setFont(QFont(font_family))
         self.camera_label.setStyleSheet("font-size: 23px; color: white; background-color: black; border-radius: 10px;")
         self.camera_label.setFixedSize(640, 480)
         self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        camera_label_layout = QVBoxLayout()
+        camera_label_layout.addWidget(self.camera_label)
+
+        self.calibration_start = QPushButton("Start Calibration")
+        self.calibration_confirm = QPushButton("This is my best posture")
+        
+        # Calibration buttons style
+        calibration_button_style = """
+            QPushButton {
+                background-color: #0078A0;
+                color: white;
+                padding: 10px;
+                border-radius: 5px;
+                border: 2px solid transparent;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #005f7f;
+                border: 2px solid white;
+            }
+            QPushButton:pressed {
+                background-color: #004c66;
+            }
+            QPushButton:focus {
+                border: 2px solid yellow;
+            }
+        """
+
+        calibration_confirm_style = """
+            QPushButton {
+                background-color: #D32F2F;
+                color: white;
+                padding: 10px;
+                border-radius: 5px;
+                border: 2px solid transparent;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #a82828;
+                border: 2px solid white;
+            }
+            QPushButton:pressed {
+                background-color: #8b1e1e;
+            }
+            QPushButton:focus {
+                border: 2px solid yellow;
+            }
+        """
+
+        self.calibration_start.setStyleSheet(calibration_button_style)
+        self.calibration_confirm.setStyleSheet(calibration_confirm_style)
+
+        self.calibration_start.clicked.connect(self.start_calibration)
+        self.calibration_confirm.clicked.connect(self.calibration_complete)
+
+        self.calibration_confirm.setVisible(False)
+        self.calibration_confirm.setEnabled(False) 
+
+        self.calibration_start.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.calibration_confirm.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        camera_label_layout.addWidget(self.calibration_start)
+        camera_label_layout.addWidget(self.calibration_confirm)
 
         # Layouts
         main_layout = QVBoxLayout(self)
@@ -143,8 +222,8 @@ class PosturePalApp(QWidget):
         button_layout.addWidget(self.stop_button)
 
         main_layout.addLayout(button_layout)
-        main_layout.addWidget(self.notification_checkbox)  # Add the checkbox
-        main_layout.addWidget(self.camera_label)
+        main_layout.addWidget(self.notification_checkbox)
+        main_layout.addLayout(camera_label_layout)
 
         self.setLayout(main_layout)
 
@@ -174,7 +253,7 @@ class PosturePalApp(QWidget):
             if self.isMinimized():
                 self.tray_icon.show()
                 self.hide()
-                self.tray_icon.showMessage("PosturePal", "Running in system tray", QSystemTrayIcon.MessageIcon.Information, 3000)
+                self.tray_icon.showMessage("PostureTap", "Running in system tray", QSystemTrayIcon.MessageIcon.Information, 3000)
         super().changeEvent(event)
 
     def on_tray_icon_click(self, reason):
@@ -210,17 +289,63 @@ class PosturePalApp(QWidget):
 
     def get_camera_names(self):
         devices = FilterGraph().get_input_devices()
-
         cameras = {}
-
         for device_index, device_name in enumerate(devices):
             cameras[device_index] = device_name
-
         return cameras
 
     def start_camera(self):
         """ Start the selected camera """
+        global Calibrated
+        if not Calibrated:
+            self.camera_label.setText("No available height data, start the calibration first!")
+            return
+        
+        release_camera()
         self.timer.start(30)  # Update every 30ms
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        self.calibration_start.setVisible(False)
+        self.calibration_start.setEnabled(False)
+
+
+    def stop_camera(self):
+        """ Stop the camera feed """
+
+        self.timer.stop()
+        release_camera()
+        self.camera_label.setText("Camera Device")
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.calibration_start.setVisible(True)
+        self.calibration_start.setEnabled(True)
+
+    def start_calibration(self):
+            """Starts the calibration process."""
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(False)
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(False)
+
+            self.calibration_start.setEnabled(False)
+            self.calibration_start.setVisible(False)
+            self.calibration_confirm.setEnabled(True)
+            self.calibration_confirm.setVisible(True)
+            
+            self.calibration_window.show()
+            self.calibration_window.start_Calibration_camera()
+
+    def calibration_complete(self):
+        """ Handle the completion of calibration """
+        global Calibrated
+        self.camera_label.setText("Calibration Completed, start your camera!")
+        
+        Calibrated = True
+        load_best_distance()
+        self.calibration_confirm.setVisible(False)
+        self.calibration_start.setVisible(True)
+        self.calibration_start.setEnabled(True)
+        self.start_button.setEnabled(True)
 
     def update_frame(self):
         """ Capture and update the camera feed """
@@ -230,15 +355,16 @@ class PosturePalApp(QWidget):
             h, w, ch = frame.shape
             qimg = QImage(frame.data, w, h, ch * w, QImage.Format.Format_RGB888)
             self.camera_label.setPixmap(QPixmap.fromImage(qimg))
+            
+            self.camera_label.setPixmap(QPixmap.fromImage(qimg))
+            self.camera_label.setScaledContents(True)  # Ensure it scales correctly
 
-    def stop_camera(self):
-        """ Stop the camera feed """
-        self.timer.stop()
-        self.camera_label.setText("Camera Device")
-    
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = PosturePalApp()
+    window = PostureTapApp()
     window.show()
+    c_window = Calibration_Window()
+    c_window.hide()
     sys.exit(app.exec())

@@ -1,6 +1,6 @@
 # PostureTap—Real-Time Front-View Sitting Posture Evaluation and Correction Reminder Using YOLOv11
 
-This repository offers a custom-built, ***open-source application for real-time front-view sitting posture detection, evaluation, and correction reminder***, powered by [YOLOv11](https://github.com/ultralytics/ultralytics). It allows users to define and save their ideal sitting posture through a guided calibration process. Once calibrated, the system actively tracks the user's posture using keypoint analysis and compares it against their personalized benchmark. The goal is to deliver meaningful, user-specific feedback that encourages better posture habits and supports ergonomic well-being during prolonged sitting.
+This repository offers a custom-built, ***open-source application for real-time front-view sitting posture detection, evaluation, and correction reminder***, powered by [YOLOv11](https://github.com/ultralytics/ultralytics). It allows users to define and save their ideal sitting posture through a guided calibration process. Once calibrated, the system actively tracks the user's posture using keypoint analysis and compares it against their personalized benchmark. The goal is to deliver simplistic and meaningful user-specific feedback that encourages better sitting posture habits during prolonged sitting while only requiring a standard webcam.
 
 ## Key Features
 * **Buit With Python**: Developed in Python, leveraging OpenCV and GUI components for real-time posture feedback in a user-friendly environment.
